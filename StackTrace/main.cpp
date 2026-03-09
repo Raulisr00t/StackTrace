@@ -45,7 +45,7 @@ DWORD GetMainThreadId(DWORD pid)
     return mainTid;
 }
 
-int RunRemote(DWORD pid)
+int Run(DWORD pid)
 {
     HANDLE hProcess = NULL;
     HANDLE hThread = NULL;
@@ -153,5 +153,5 @@ int main(int argc, char* argv[])
     }
 
     DWORD pid = atoi(argv[1]);
-    return RunRemote(pid);
+    return Run(pid);
 }
