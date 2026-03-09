@@ -1,4 +1,4 @@
-# Advanced Windows App Stack Tracer
+# Advanced Windows App Stack Tracer ( Without Any Debug API/Lib)
 
 ## Simulates `k` command of WinDBG
 
