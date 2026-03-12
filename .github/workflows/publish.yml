@@ -19,37 +19,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          allow-prereleases: true    # needed for 3.14 until it's stable
+          allow-prereleases: true
 
-      - name: Install build dependencies 
-        run: pip install pybind11 build
+      - name: Install build dependencies
+        run: pip install pybind11 build twine
 
       - name: Build wheel
         run: python -m build --wheel
         working-directory: StackTrace/src/python
 
-      - name: Upload wheel as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-${{ matrix.python-version }}
-          path: StackTrace/src/python/dist/*.whl
-
-  publish:
-    needs: build
-    runs-on: windows-latest
-
-    steps:
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Install twine
-        run: pip install twine
-
-      - name: Upload to PyPI
-        run: twine upload dist/*.whl
+      - name: Upload to PyPI directly
+        run: twine upload StackTrace/src/python/dist/*.whl --skip-existing
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
