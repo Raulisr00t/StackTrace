@@ -12,7 +12,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
  
-:: Check for Visual Studio
+:: Check for Visual Studio 
 where cl >nul 2>&1
 if %errorlevel% neq 0 (
     echo [-] MSVC compiler not found.
