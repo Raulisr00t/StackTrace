@@ -21,7 +21,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true    # needed for 3.14 until it's stable
 
-      - name: Install build dependencies
+      - name: Install build dependencies 
         run: pip install pybind11 build
 
       - name: Build wheel
