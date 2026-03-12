@@ -260,10 +260,3 @@ Frame 63: 0x00007FFA78C53571 [ntdll.dll!LdrGetDllFullName+0x221]
 
 MIT © [Raulisr00t](https://github.com/Raulisr00t)
 
----
-
-<div align="center">
-
-**If you find this useful, give it a ⭐ on GitHub!**
-
-</div>
