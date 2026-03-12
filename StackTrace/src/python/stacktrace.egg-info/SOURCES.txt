@@ -1,0 +1,15 @@
+README.md
+pybindings.cpp
+pyproject.toml
+setup.py
+../../src/core/context_wrapper.cpp
+../../src/core/stack_walker.cpp
+../../src/core/context_wrapper.cpp
+../../src/core/stack_walker.cpp
+stacktrace/__init__.py
+stacktrace.egg-info/PKG-INFO
+stacktrace.egg-info/SOURCES.txt
+stacktrace.egg-info/dependency_links.txt
+stacktrace.egg-info/not-zip-safe
+stacktrace.egg-info/requires.txt
+stacktrace.egg-info/top_level.txt

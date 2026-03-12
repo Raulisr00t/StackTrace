@@ -1,0 +1,4 @@
+C:/Users/MrEll/source/repos/StackTrace/StackTrace/build/CMakeFiles/stacktrace_core.dir
+C:/Users/MrEll/source/repos/StackTrace/StackTrace/build/CMakeFiles/StackTrace.dir
+C:/Users/MrEll/source/repos/StackTrace/StackTrace/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/MrEll/source/repos/StackTrace/StackTrace/build/CMakeFiles/ZERO_CHECK.dir

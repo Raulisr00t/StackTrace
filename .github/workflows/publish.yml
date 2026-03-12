@@ -1,0 +1,54 @@
+name: Build and Publish to PyPI
+
+on:
+  workflow_dispatch:        
+  push:
+    tags:
+      - "v*"               
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build dependencies
+        run: pip install pybind11 build
+
+      - name: Build wheel
+        run: python -m build --wheel
+        working-directory: StackTrace/src/python
+
+      - name: Upload wheel as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.python-version }}
+          path: StackTrace/src/python/dist/*.whl
+
+  publish:
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Install twine
+        run: pip install twine
+
+      - name: Upload to PyPI
+        run: twine upload dist/*.whl
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
