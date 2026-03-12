@@ -1,0 +1,48 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: |
+          cmake -S StackTrace -B StackTrace/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build StackTrace/build --config Release
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: StackTrace/build/bin/Release/StackTrace.exe
+          name: StackTrace ${{ github.ref_name }}
+          body: |
+            ## StackTrace ${{ github.ref_name }}
+
+            ### Download
+            - **StackTrace.exe** — prebuilt Windows x64 CLI tool
+
+            ### Usage
+            ```
+            StackTrace.exe <PID>
+            ```
+
+            ### Requirements
+            - Windows x64
+            - Administrator privileges recommended
+
+            ### Python Library
+            ```
+            pip install stacktrace==${{ github.ref_name }}
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
