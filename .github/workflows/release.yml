@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -42,7 +45,7 @@ jobs:
 
             ### Python Library
             ```
-            pip install stacktrace==${{ github.ref_name }}
+            pip install stacktrace
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
