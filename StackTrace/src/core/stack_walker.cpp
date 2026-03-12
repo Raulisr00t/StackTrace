@@ -11,10 +11,6 @@
 
 namespace stacktrace {
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
 struct ModuleInfo {
     ULONG_PTR base;
     ULONG_PTR size;
@@ -123,10 +119,12 @@ static bool resolve_address(
                           ordinals.data(), numNames * sizeof(WORD), nullptr);
 
         ULONG_PTR bestAddr   = 0;
+        
         int        bestIndex = -1;
 
         for (DWORD j = 0; j < numNames; j++) {
             ULONG_PTR fAddr = m.base + funcRVAs[ordinals[j]];
+            
             if (fAddr <= addr && fAddr > bestAddr) {
                 bestAddr  = fAddr;
                 bestIndex = static_cast<int>(j);
@@ -146,9 +144,6 @@ static bool resolve_address(
     return false;
 }
 
-// ---------------------------------------------------------------------------
-// Core stack walk (RSP scanning heuristic — same approach as original)
-// ---------------------------------------------------------------------------
 static std::vector<Frame> walk_stack_remote(
     HANDLE hProcess,
     CONTEXT* ctx,
@@ -166,7 +161,6 @@ static std::vector<Frame> walk_stack_remote(
         frames.push_back(f);
     }
 
-    // Walk RSP — read 256 QWORDs and treat code-range values as candidate return addresses
     const DWORD  SCAN_DEPTH  = 256;
     ULONG_PTR    rsp         = ctx->Rsp;
     ULONG64      stack_buf[SCAN_DEPTH]{};
@@ -180,11 +174,12 @@ static std::vector<Frame> walk_stack_remote(
 
     for (DWORD i = 0; i < readable && frames.size() < max_frames; i++) {
         ULONG_PTR candidate = stack_buf[i];
-        if (candidate < 0x10000 || candidate == 0)        // reject null/low
+        if (candidate < 0x10000 || candidate == 0)       
             continue;
 
         std::string mod, func;
         ULONG_PTR   off = 0;
+        
         if (resolve_address(hProcess, modules, candidate, mod, func, off)) {
             Frame f;
             f.address         = candidate;
@@ -197,10 +192,6 @@ static std::vector<Frame> walk_stack_remote(
 
     return frames;
 }
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 TraceResult capture_stack_trace(uint32_t pid, uint32_t max_frames, bool /*resolve_symbols*/)
 {
@@ -239,6 +230,7 @@ TraceResult capture_stack_trace(uint32_t pid, uint32_t max_frames, bool /*resolv
 
     CONTEXT ctx{};
     ctx.ContextFlags = CONTEXT_FULL;
+    
     if (!GetThreadContext(hThread, &ctx)) {
         ResumeThread(hThread);
         CloseHandle(hThread);
@@ -253,6 +245,7 @@ TraceResult capture_stack_trace(uint32_t pid, uint32_t max_frames, bool /*resolv
     ResumeThread(hThread);
     CloseHandle(hThread);
     CloseHandle(hProcess);
+    
     return result;
 }
 
@@ -274,6 +267,7 @@ std::vector<std::string> get_process_modules(uint32_t pid)
             }
         }
     }
+    
     CloseHandle(hProcess);
     return out;
 }
@@ -281,7 +275,10 @@ std::vector<std::string> get_process_modules(uint32_t pid)
 bool is_process_traceable(uint32_t pid)
 {
     HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-    if (!h) return false;
+    
+    if (!h) 
+        return false;
+    
     CloseHandle(h);
     return true;
 }
