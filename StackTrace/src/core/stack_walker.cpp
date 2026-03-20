@@ -1,5 +1,6 @@
 // src/core/stack_walker.cpp
 #include "stacktrace.h"
+#include "stack_walker.h"
 #include "types.h"
 #include <tlhelp32.h>
 #include <psapi.h>
@@ -283,4 +284,145 @@ bool is_process_traceable(uint32_t pid)
     return true;
 }
 
-} // namespace stacktrace
+// ... is_process_traceable ends here ...
+
+void watch_stack(
+    DWORD pid,
+    WatchCallback callback,
+    int interval_ms,
+    int max_frames,
+    bool resolve_symbols,
+    DWORD target_tid)
+{
+    while (true)
+    {
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!hProcess) break;
+
+        DWORD exitCode = 0;
+        BOOL alive = GetExitCodeProcess(hProcess, &exitCode);
+        CloseHandle(hProcess);
+        if (!alive || exitCode != STILL_ACTIVE) break;
+
+        // Use specific thread or fall back to main thread
+        DWORD tid = target_tid != 0 ? target_tid : get_main_thread_id(pid);
+
+        HANDLE hProcess2 = OpenProcess(
+            PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (!hProcess2) break;
+
+        HANDLE hThread = OpenThread(
+            THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, tid);
+        if (!hThread) {
+            CloseHandle(hProcess2);
+            Sleep(interval_ms);
+            continue;
+        }
+
+        if (SuspendThread(hThread) == (DWORD)-1) {
+            CloseHandle(hThread);
+            CloseHandle(hProcess2);
+            Sleep(interval_ms);
+            continue;
+        }
+
+        CONTEXT ctx{};
+        ctx.ContextFlags = CONTEXT_FULL;
+
+        TraceResult result;
+        result.process_id = pid;
+        result.thread_id = tid;
+
+        if (GetThreadContext(hThread, &ctx)) {
+            result.frames = walk_stack_remote(hProcess2, &ctx, max_frames);
+            result.success = !result.frames.empty();
+        }
+
+        ResumeThread(hThread);
+
+        CloseHandle(hThread);
+        CloseHandle(hProcess2);
+
+        if (!callback(result)) break;
+
+        Sleep(interval_ms);
+    }
+}
+
+std::unordered_map<uint32_t, TraceResult> capture_all_threads(
+    uint32_t pid,
+    uint32_t max_frames,
+    bool resolve_symbols)
+{
+    std::unordered_map<uint32_t, TraceResult> results;
+
+    HANDLE hProcess = OpenProcess(
+        PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+    if (!hProcess)
+        return results;
+
+    // Enumerate all threads of this process
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (hSnap == INVALID_HANDLE_VALUE) {
+        CloseHandle(hProcess);
+        return results;
+    }
+
+    // Pre-enumerate modules once for all threads
+    auto modules = enumerate_modules(hProcess);
+
+    THREADENTRY32 te32 = { sizeof(te32) };
+    if (!Thread32First(hSnap, &te32)) {
+        CloseHandle(hSnap);
+        CloseHandle(hProcess);
+        return results;
+    }
+
+    do {
+        if (te32.th32OwnerProcessID != pid)
+            continue;
+
+        DWORD tid = te32.th32ThreadID;
+        TraceResult result;
+        result.process_id = pid;
+        result.thread_id = tid;
+
+        HANDLE hThread = OpenThread(
+            THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, tid);
+        if (!hThread) {
+            result.error_message = "OpenThread failed";
+            results[tid] = result;
+            continue;
+        }
+
+        if (SuspendThread(hThread) == (DWORD)-1) {
+            CloseHandle(hThread);
+            result.error_message = "SuspendThread failed";
+            results[tid] = result;
+            continue;
+        }
+
+        CONTEXT ctx{};
+        ctx.ContextFlags = CONTEXT_FULL;
+
+        if (GetThreadContext(hThread, &ctx)) {
+            result.frames = walk_stack_remote(hProcess, &ctx, max_frames);
+            result.success = !result.frames.empty();
+        }
+        else {
+            result.error_message = "GetThreadContext failed";
+        }
+
+        ResumeThread(hThread);
+        CloseHandle(hThread);
+
+        results[tid] = result;
+
+    } while (Thread32Next(hSnap, &te32));
+
+    CloseHandle(hSnap);
+    CloseHandle(hProcess);
+    return results;
+}
+
+} // namespace stacktrace   
