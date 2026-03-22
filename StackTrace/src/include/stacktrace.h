@@ -3,6 +3,7 @@
 
 #include "types.h"
 #include <Windows.h>
+#include <unordered_map> 
 
 #ifdef STACKTRACE_EXPORTS
     #define STACKTRACE_API __declspec(dllexport)
