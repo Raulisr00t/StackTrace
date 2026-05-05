@@ -15,8 +15,6 @@
 
 namespace stacktrace {
 
-    // ── PE / unwind structures ────────────────────────────────────────────────────
-
     struct RUNTIME_FUNCTION_ENTRY {
         DWORD BeginAddress;
         DWORD EndAddress;
@@ -37,8 +35,6 @@ namespace stacktrace {
 
 #define UNW_FLAG_CHAININFO 0x04
 
-    // ── Module info with cached .pdata ────────────────────────────────────────────
-
     struct ModuleInfo {
         ULONG_PTR base;
         ULONG_PTR size;
@@ -46,8 +42,6 @@ namespace stacktrace {
         std::vector<RUNTIME_FUNCTION_ENTRY> pdata;
         bool pdata_loaded = false;
     };
-
-    // ── Helpers ───────────────────────────────────────────────────────────────────
 
     static bool rpm(HANDLE hProc, ULONG_PTR addr, void* buf, SIZE_T sz)
     {
@@ -67,7 +61,9 @@ namespace stacktrace {
                 if (te32.th32OwnerProcessID == pid) { tid = te32.th32ThreadID; break; }
             } while (Thread32Next(hSnap, &te32));
         }
+        
         CloseHandle(hSnap);
+        
         return tid;
     }
 
@@ -75,14 +71,20 @@ namespace stacktrace {
     {
         std::vector<ModuleInfo> mods;
         HMODULE hMods[1024]; DWORD cbNeeded = 0;
+        
         if (!EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) return mods;
+        
         DWORD count = cbNeeded / sizeof(HMODULE);
+        
         for (DWORD i = 0; i < count; i++) {
             MODULEINFO mi{};
             if (!GetModuleInformation(hProcess, hMods[i], &mi, sizeof(mi))) continue;
+        
             char path[MAX_PATH]{};
+            
             GetModuleFileNameExA(hProcess, hMods[i], path, sizeof(path));
             const char* name = strrchr(path, '\\');
+            
             ModuleInfo info;
             info.base = reinterpret_cast<ULONG_PTR>(mi.lpBaseOfDll);
             info.size = mi.SizeOfImage;
@@ -92,11 +94,10 @@ namespace stacktrace {
         return mods;
     }
 
-    // ── PE export symbol resolution ───────────────────────────────────────────────
-
     static bool resolve_address(
         HANDLE hProcess,
         const std::vector<ModuleInfo>& modules,
+
         ULONG_PTR addr,
         std::string& out_module,
         std::string& out_func,
@@ -125,6 +126,7 @@ namespace stacktrace {
 
             DWORD numFuncs = expData.NumberOfFunctions;
             DWORD numNames = expData.NumberOfNames;
+            
             ULONG_PTR addrFuncs = m.base + expData.AddressOfFunctions;
             ULONG_PTR addrNames = m.base + expData.AddressOfNames;
             ULONG_PTR addrOrdinals = m.base + expData.AddressOfNameOrdinals;
@@ -141,11 +143,13 @@ namespace stacktrace {
                 ordinals.data(), numNames * sizeof(WORD), nullptr);
 
             ULONG_PTR bestAddr = 0; int bestIdx = -1;
+            
             for (DWORD j = 0; j < numNames; j++) {
                 if (ordinals[j] >= numFuncs) continue;
                 ULONG_PTR fAddr = m.base + funcRVAs[ordinals[j]];
                 if (fAddr <= addr && fAddr > bestAddr) { bestAddr = fAddr; bestIdx = (int)j; }
             }
+            
             if (bestIdx >= 0) {
                 char fname[256]{};
                 ReadProcessMemory(hProcess,
@@ -158,8 +162,6 @@ namespace stacktrace {
         }
         return false;
     }
-
-    // ── .pdata loader ─────────────────────────────────────────────────────────────
 
     static bool load_pdata(HANDLE hProcess, ModuleInfo& mod)
     {
@@ -190,17 +192,17 @@ namespace stacktrace {
         return true;
     }
 
-    // ── RUNTIME_FUNCTION binary search ───────────────────────────────────────────
-
     static const RUNTIME_FUNCTION_ENTRY* find_runtime_function(
         const ModuleInfo& mod, ULONG_PTR addr)
     {
         if (mod.pdata.empty()) return nullptr;
         DWORD rva = static_cast<DWORD>(addr - mod.base);
         DWORD lo = 0, hi = static_cast<DWORD>(mod.pdata.size());
+        
         while (lo < hi) {
             DWORD mid = (lo + hi) / 2;
             const auto& rf = mod.pdata[mid];
+        
             if (rva < rf.BeginAddress) hi = mid;
             else if (rva >= rf.EndAddress)   lo = mid + 1;
             else                             return &mod.pdata[mid];
@@ -215,16 +217,6 @@ namespace stacktrace {
         return nullptr;
     }
 
-    // ── Real x64 unwind: one frame ────────────────────────────────────────────────
-    //
-    // Implements the x64 ABI virtual unwind algorithm:
-    //   1. Find RUNTIME_FUNCTION for RIP in .pdata (binary search)
-    //   2. Read UNWIND_INFO, apply UNWIND_CODEs to virtually unwind RSP
-    //   3. Follow CHAININFO links until done
-    //   4. Return address is at [RSP]; RSP advances by 8
-    //
-    // Leaf functions (no .pdata entry): [RSP] is the return address directly.
-    //
     static bool unwind_one_frame(
         HANDLE hProcess,
         std::vector<ModuleInfo>& modules,
@@ -249,10 +241,10 @@ namespace stacktrace {
         const RUNTIME_FUNCTION_ENTRY* rf = find_runtime_function(*pMod, cur_rip);
 
         if (!rf) {
-            // Leaf function: no .pdata entry
             ULONG_PTR ret = 0;
             if (!rpm(hProcess, cur_rsp, &ret, sizeof(ret))) return false;
             if (!ret || ret < 0x10000) return false;
+
             next_rip = ret; next_rsp = cur_rsp + 8; next_rbp = cur_rbp;
             return true;
         }
@@ -278,18 +270,17 @@ namespace stacktrace {
                     codes.data(), n_codes * sizeof(UNWIND_CODE_SLOT), &r);
             }
 
-            // Frame pointer base (if frame register is set)
             ULONG_PTR frame_ptr = 0;
             if (freg == 5) // RBP
                 frame_ptr = rbp - (ULONG_PTR)foff16 * 16;
 
-            // Apply unwind codes
             for (BYTE ci = 0; ci < n_codes; ) {
                 BYTE op = codes[ci].UnwindOpAndInfo & 0x0F;
                 BYTE info = (codes[ci].UnwindOpAndInfo >> 4) & 0x0F;
 
                 switch (op) {
-                case 0: // UWOP_PUSH_NONVOL
+                    
+                case 0: 
                 {
                     ULONG64 saved = 0;
                     rpm(hProcess, rsp, &saved, sizeof(saved));
@@ -297,7 +288,8 @@ namespace stacktrace {
                     rsp += 8;
                 }
                 ci++; break;
-                case 1: // UWOP_ALLOC_LARGE
+                    
+                case 1: 
                     if (info == 0) {
                         if (ci + 1 < n_codes) { rsp += (ULONG_PTR)codes[ci + 1].FrameOffset * 8; ci += 2; }
                         else ci++;
@@ -310,16 +302,21 @@ namespace stacktrace {
                         else ci++;
                     }
                     break;
-                case 2: // UWOP_ALLOC_SMALL
+                    
+                case 2: 
                     rsp += (ULONG_PTR)info * 8 + 8;
                     ci++; break;
-                case 3: // UWOP_SET_FPREG
+                    
+                case 3: 
                     if (frame_ptr) rsp = frame_ptr;
                     ci++; break;
+                    
                 case 4: case 8: // UWOP_SAVE_NONVOL / UWOP_SAVE_XMM128
                     ci += 2; break;
+                    
                 case 5: case 9: // UWOP_SAVE_NONVOL_FAR / UWOP_SAVE_XMM128_FAR
                     ci += 3; break;
+                
                 case 10: // UWOP_PUSH_MACHFRAME
                     if (info == 1) rsp += 8;
                     {
@@ -357,8 +354,6 @@ namespace stacktrace {
         return true;
     }
 
-    // ── Main walk ─────────────────────────────────────────────────────────────────
-
     static std::vector<Frame> walk_stack_remote(
         HANDLE hProcess, CONTEXT* ctx, uint32_t max_frames)
     {
@@ -381,6 +376,7 @@ namespace stacktrace {
             ULONG_PTR next_rip = 0, next_rsp = 0, next_rbp = 0;
             if (!unwind_one_frame(hProcess, modules, rip, rsp, rbp,
                 next_rip, next_rsp, next_rbp)) break;
+            
             if (next_rip < 0x10000) break;
             if (next_rsp <= rsp)    break;
             if (next_rip == rip && next_rsp == rsp) break;
@@ -394,8 +390,6 @@ namespace stacktrace {
         }
         return frames;
     }
-
-    // ── Public API ────────────────────────────────────────────────────────────────
 
     TraceResult capture_stack_trace(uint32_t pid, uint32_t max_frames, bool)
     {
@@ -452,8 +446,12 @@ namespace stacktrace {
         std::vector<std::string> out;
         HANDLE hProcess = OpenProcess(
             PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
-        if (!hProcess) return out;
+        
+        if (!hProcess) 
+            return out;
+        
         HMODULE hMods[1024]; DWORD cbNeeded = 0;
+        
         if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) {
             for (DWORD i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
                 char path[MAX_PATH]{};
@@ -463,31 +461,39 @@ namespace stacktrace {
                 }
             }
         }
+        
         CloseHandle(hProcess);
+        
         return out;
     }
 
     bool is_process_traceable(uint32_t pid)
     {
         HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-        if (!h) return false;
+        if (!h) 
+            return false;
+        
         CloseHandle(h);
         return true;
     }
 
     void watch_stack(
         DWORD pid, WatchCallback callback,
+        
         int interval_ms, int max_frames, bool resolve_symbols, DWORD target_tid)
     {
         while (true) {
             HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
             if (!hProcess) break;
+            
             DWORD exitCode = 0;
             BOOL alive = GetExitCodeProcess(hProcess, &exitCode);
+            
             CloseHandle(hProcess);
             if (!alive || exitCode != STILL_ACTIVE) break;
 
             DWORD tid = target_tid != 0 ? target_tid : get_main_thread_id(pid);
+            
             HANDLE hProcess2 = OpenProcess(
                 PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
             if (!hProcess2) break;
@@ -532,14 +538,12 @@ namespace stacktrace {
         HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
         if (hSnap == INVALID_HANDLE_VALUE) { CloseHandle(hProcess); return results; }
 
-        // Pre-load .pdata for all modules once — shared across all threads
         auto modules = enumerate_modules(hProcess);
         for (auto& m : modules) load_pdata(hProcess, m);
 
         THREADENTRY32 te32 = { sizeof(te32) };
-        if (!Thread32First(hSnap, &te32)) {
+        if (!Thread32First(hSnap, &te32)) 
             CloseHandle(hSnap); CloseHandle(hProcess); return results;
-        }
 
         do {
             if (te32.th32OwnerProcessID != pid) continue;
