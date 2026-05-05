@@ -1,4 +1,4 @@
-// src/include/stacktrace.h
+﻿// src/include/stacktrace.h
 #pragma once
 
 #include "types.h"
