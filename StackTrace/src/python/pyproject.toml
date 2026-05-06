@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stacktrace"
-version = "1.0.0"
+version = "2.0.0"
 description = "Low-level Windows Stack Trace Engine"
 requires-python = ">=3.8"
 license = "MIT"
