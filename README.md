@@ -41,7 +41,7 @@
 pip install stacktrace
 ```
 
-**Requirements:** Windows x64 · Python 3.9 – 3.14
+>**Requirements:** Windows x64 · Python 3.9 – 3.14
 
 No compilation needed — pre-built wheels are available for all supported Python versions.
 
